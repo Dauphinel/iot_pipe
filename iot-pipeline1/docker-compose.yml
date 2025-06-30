@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: zookeeper-1
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+      - "2888:2888"
+      - "3888:3888"
+
+  kafka-1:
+    image: bitnami/kafka:latest
+    container_name: kafka-1
+    environment:
+      - KAFKA_CFG_BROKER_ID=1                     # ✅ Ajout ici
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka-1:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka-1:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper-1:2181
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto-1
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  spark:
+    image: bitnami/spark:3.3.2
+    container_name: spark-1
+    volumes:
+      - ./spark_streaming.py:/app/spark_streaming.py
+    command: >
+      spark-submit
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2
+      /app/spark_streaming.py
+    depends_on:
+      - kafka-1
+    ports:
+      - "4040:4040"
+
+  mqtt-kafka-bridge:
+    build: ./mqtt-kafka-bridge
+    container_name: mqtt-kafka-bridge
+    depends_on:
+      - kafka-1
+      - mosquitto
+    restart: always
